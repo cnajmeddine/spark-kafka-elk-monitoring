@@ -12,53 +12,55 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-    # Checkout the repository
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Set up Docker
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v2
+      # Set up Docker
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
 
-    # Lint Kubernetes YAMLs
-    - name: Lint Kubernetes manifests
-      uses: yannh/kubeconform-action@v1
-      with:
-        files: 'k8s/**/*.yaml'
+      # Lint Kubernetes YAMLs (alternative approach)
+      - name: Validate Kubernetes manifests
+        run: |
+          sudo apt-get update && sudo apt-get install -y curl
+          curl -L https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -strict -summary -exit-on-error k8s/**/*.yaml
 
-    # Build Docker images
-    - name: Build Docker images
-      run: |
-        docker-compose build
+      # Build Docker images
+      - name: Build Docker images
+        run: |
+          docker-compose build
 
-    # Run unit tests (if applicable)
-    - name: Run Python tests
-      run: |
-        pip install pytest
-        pytest spark/jobs/
+      # Run unit tests
+      - name: Run Python tests
+        run: |
+          pip install pytest
+          pytest spark/jobs/
 
   deploy-to-k8s:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
     steps:
-    # Checkout the repository
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Configure kubectl
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
+      # Configure kubectl
+      - name: Install and configure kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
 
-    # Authenticate with Kubernetes
-    - name: Authenticate to Kubernetes cluster
-      run: |
-        echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
-        export KUBECONFIG=$PWD/kubeconfig
+      # Authenticate with Kubernetes
+      - name: Set Kubeconfig
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" > kubeconfig
+          export KUBECONFIG=$PWD/kubeconfig
 
-    # Deploy to Kubernetes
-    - name: Apply Kubernetes manifests
-      run: |
-        kubectl apply -f k8s/
+      # Deploy to Kubernetes
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/
